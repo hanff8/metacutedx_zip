@@ -1,115 +1,89 @@
-name: Auto Merge and Release
+name: Check for new releases and convert tgz to zip
 
 on:
   schedule:
-    - cron: '0 * * * *' # 每小时运行一次，可以根据需要调整
+    - cron: '0 * * * *' # 每小时检查一次，可以根据需要调整
+  workflow_dispatch:
 
 jobs:
-  detect-upstream-updates:
+  check-and-convert:
     runs-on: ubuntu-latest
-    outputs:
-      pr-created: ${{ steps.create-pr.outputs.pr_url }}
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Configure git
+      - name: Set up Git
         run: |
           git config --global user.name "github-actions"
           git config --global user.email "github-actions@github.com"
 
-      - name: Add upstream remote
-        run: git remote add upstream https://github.com/MetaCubeX/metacubexd.git
-        # 确保替换 <UPSTREAM_REPO_URL> 为上游仓库的URL
-
-      - name: Fetch upstream
-        run: git fetch upstream
-
-      - name: Check for changes
-        id: check-changes
-        run: |
-          git checkout main
-          git pull origin main
-          git diff --quiet main upstream/main || echo "changes detected"
-
-      - name: Create PR if changes detected
-        id: create-pr
-        uses: peter-evans/create-pull-request@v5
-        if: steps.check-changes.outputs.changes == 'changes detected'
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          commit-message: 'chore: merge upstream changes'
-          title: 'Merge upstream changes'
-          body: 'Automated PR to merge upstream changes'
-          branch: 'merge-upstream-changes'
-          labels: 'automated pr'
-          base: 'main'
-
-  auto-merge-pr:
-    runs-on: ubuntu-latest
-    needs: detect-upstream-updates
-    if: ${{ needs.detect-upstream-updates.outputs.pr-created }}
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Merge PR
+      - name: Check for latest release
+        id: check_release
         uses: actions/github-script@v6
         with:
           script: |
-            const pr_url = '${{ needs.detect-upstream-updates.outputs.pr-created }}';
-            const pr_number = pr_url.split('/').pop();
-            const { data: pr } = await github.pulls.get({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: pr_number,
+            const response = await github.repos.getLatestRelease({
+              owner: 'MetaCubeX',
+              repo: 'metacubexd'
             });
+            return response.data;
 
-            if (pr.state === 'open') {
-              await github.pulls.merge({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                pull_number: pr_number,
-                merge_method: 'merge',
-              });
-            }
+      - name: Set latest release id
+        run: echo "LATEST_RELEASE_ID=${{ steps.check_release.outputs.id }}" >> $GITHUB_ENV
 
-  release:
-    runs-on: ubuntu-latest
-    needs: auto-merge-pr
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Check if new release
+        id: check_new_release
+        uses: actions/github-script@v6
         with:
-          node-version: '16'
+          script: |
+            const { owner, repo } = context.repo;
+            let lastCheckedReleaseId;
+            try {
+              lastCheckedReleaseId = (await github.actions.getRepoSecret({
+                owner,
+                repo,
+                secret_name: 'LAST_RELEASE_ID'
+              })).secret;
+            } catch (e) {
+              lastCheckedReleaseId = '0';
+            }
+            const latestReleaseId = process.env.LATEST_RELEASE_ID;
+            return lastCheckedReleaseId !== latestReleaseId;
 
-      - name: Install dependencies
-        run: npm install
+      - name: Download tgz file
+        if: steps.check_new_release.outputs.result == 'true'
+        uses: actions/github-script@v6
+        id: download-tgz
+        with:
+          script: |
+            const { assets } = ${{ steps.check_release.outputs }};
+            const tgzAsset = assets.find(asset => asset.name.endsWith('.tgz'));
+            if (!tgzAsset) {
+              throw new Error('No tgz asset found in the latest release');
+            }
+            return tgzAsset.browser_download_url;
 
-      - name: Build
-        run: npm run build
+      - name: Download the tgz file
+        if: steps.check_new_release.outputs.result == 'true'
+        run: curl -L ${{ steps.download-tgz.outputs.result }} -o release.tgz
 
-      - name: Bump version and create tag
-        id: version
-        run: |
-          NEW_TAG=$(npm version patch -m "chore: release %s")
-          echo "::set-output name=tag::$NEW_TAG"
+      - name: Extract tgz file
+        if: steps.check_new_release.outputs.result == 'true'
+        run: tar -xzf release.tgz
 
-      - name: Push changes
-        run: |
-          git push origin main --follow-tags
+      - name: Compress to zip
+        if: steps.check_new_release.outputs.result == 'true'
+        run: zip -r release.zip *
 
       - name: Create GitHub release
-        uses: softprops/action-gh-release@v1
+        if: steps.check_new_release.outputs.result == 'true'
+        uses: softprops/action-gh-release@v2
         with:
-          files: |
-            dist/**
-          tag_name: ${{ steps.version.outputs.tag }}
-          name: Release ${{ steps.version.outputs.tag }}
-          body: Automated release
+          files: release.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update last release id
+        if: steps.check_new_release.outputs.result == 'true'
+        run: |
+          echo $LATEST_RELEASE_ID > LAST_RELEASE_ID
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
