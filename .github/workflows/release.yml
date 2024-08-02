@@ -26,8 +26,6 @@ jobs:
             });
             console.log('Latest Release:', latestRelease);
             return latestRelease;
-        result-encoding: string
-        result-format: json
 
       - name: Set latest release id
         run: echo "LATEST_RELEASE_ID=${{ steps.check_release.outputs.id }}" >> $GITHUB_ENV
