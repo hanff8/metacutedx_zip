@@ -20,7 +20,6 @@ jobs:
               repo: 'metacubexd'
             });
             console.log('Latest Release:', latestRelease);
-            // Set output values
             core.setOutput('id', latestRelease.id);
             core.setOutput('assets', JSON.stringify(latestRelease.assets));
             return latestRelease;
@@ -56,17 +55,17 @@ jobs:
         uses: actions/github-script@v6
         with:
           script: |
-            const assets = JSON.parse(${{ steps.check_release.outputs.assets }});
+            const assets = JSON.parse(process.env.ASSETS);
             const tgzAsset = assets.find(asset => asset.name.endsWith('.tgz'));
             if (!tgzAsset) {
               throw new Error('No tgz asset found in the latest release');
             }
             console.log('TGZ Asset URL:', tgzAsset.browser_download_url);
-            return tgzAsset.browser_download_url;
+            core.setOutput('tgz_url', tgzAsset.browser_download_url);
 
       - name: Download the tgz file
         if: steps.check_new_release.outputs.result == 'true'
-        run: curl -L ${{ steps.download-tgz.outputs.result }} -o release.tgz
+        run: curl -L ${{ steps.download-tgz.outputs.tgz_url }} -o release.tgz
 
       - name: Extract tgz file
         if: steps.check_new_release.outputs.result == 'true'
