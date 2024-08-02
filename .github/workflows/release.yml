@@ -24,8 +24,10 @@ jobs:
             core.setOutput('assets', JSON.stringify(latestRelease.assets));
             return latestRelease;
 
-      - name: Set latest release id
-        run: echo "LATEST_RELEASE_ID=${{ steps.check_release.outputs.id }}" >> $GITHUB_ENV
+      - name: Set latest release id and assets
+        run: |
+          echo "LATEST_RELEASE_ID=${{ steps.check_release.outputs.id }}" >> $GITHUB_ENV
+          echo "ASSETS=${{ steps.check_release.outputs.assets }}" >> $GITHUB_ENV
 
       - name: Check if new release
         id: check_new_release
@@ -53,6 +55,8 @@ jobs:
         if: steps.check_new_release.outputs.result == 'true'
         id: download-tgz
         uses: actions/github-script@v6
+        env:
+          ASSETS: ${{ steps.check_release.outputs.assets }}
         with:
           script: |
             const assets = JSON.parse(process.env.ASSETS);
