@@ -28,7 +28,7 @@ jobs:
             return latestRelease;
 
       - name: Set latest release id
-        run: echo "LATEST_RELEASE_ID=${{ steps.check_release.outputs.id }}" >> $GITHUB_ENV
+        run: echo "LATEST_RELEASE_ID=${{ steps.check_release.outputs.result.id }}" >> $GITHUB_ENV
 
       - name: Check if new release
         id: check_new_release
