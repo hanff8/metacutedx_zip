@@ -21,6 +21,7 @@ jobs:
             });
             console.log('Latest Release:', latestRelease);
             core.setOutput('id', latestRelease.id);
+            core.setOutput('tag_name', latestRelease.tag_name);
             core.setOutput('assets', JSON.stringify(latestRelease.assets));
             return latestRelease;
 
@@ -28,6 +29,7 @@ jobs:
         run: |
           echo "LATEST_RELEASE_ID=${{ steps.check_release.outputs.id }}" >> $GITHUB_ENV
           echo "ASSETS=${{ steps.check_release.outputs.assets }}" >> $GITHUB_ENV
+          echo "TAG_NAME=${{ steps.check_release.outputs.tag_name }}" >> $GITHUB_ENV
 
       - name: Check if new release
         id: check_new_release
@@ -84,6 +86,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: release.zip
+          tag_name: ${{ env.TAG_NAME }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
