@@ -20,11 +20,14 @@ jobs:
         uses: actions/github-script@v6
         with:
           script: |
-            const response = await github.repos.getLatestRelease({
+            const { data: latestRelease } = await github.rest.repos.getLatestRelease({
               owner: 'MetaCubeX',
               repo: 'metacubexd'
             });
-            return response.data;
+            console.log('Latest Release:', latestRelease);
+            return latestRelease;
+        result-encoding: string
+        result-format: json
 
       - name: Set latest release id
         run: echo "LATEST_RELEASE_ID=${{ steps.check_release.outputs.id }}" >> $GITHUB_ENV
@@ -35,30 +38,34 @@ jobs:
         with:
           script: |
             const { owner, repo } = context.repo;
-            let lastCheckedReleaseId;
+            let lastCheckedReleaseId = '0';
             try {
-              lastCheckedReleaseId = (await github.actions.getRepoSecret({
+              const secret = await github.actions.getRepoSecret({
                 owner,
                 repo,
                 secret_name: 'LAST_RELEASE_ID'
-              })).secret;
+              });
+              lastCheckedReleaseId = secret.secret;
             } catch (e) {
-              lastCheckedReleaseId = '0';
+              console.log('No previous release ID found');
             }
             const latestReleaseId = process.env.LATEST_RELEASE_ID;
+            console.log('Last checked release ID:', lastCheckedReleaseId);
+            console.log('Latest release ID:', latestReleaseId);
             return lastCheckedReleaseId !== latestReleaseId;
 
       - name: Download tgz file
         if: steps.check_new_release.outputs.result == 'true'
-        uses: actions/github-script@v6
         id: download-tgz
+        uses: actions/github-script@v6
         with:
           script: |
-            const { assets } = ${{ steps.check_release.outputs }};
+            const assets = ${{ steps.check_release.outputs.assets }};
             const tgzAsset = assets.find(asset => asset.name.endsWith('.tgz'));
             if (!tgzAsset) {
               throw new Error('No tgz asset found in the latest release');
             }
+            console.log('TGZ Asset URL:', tgzAsset.browser_download_url);
             return tgzAsset.browser_download_url;
 
       - name: Download the tgz file
